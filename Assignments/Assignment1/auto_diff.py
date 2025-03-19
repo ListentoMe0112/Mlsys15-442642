@@ -205,10 +205,13 @@ class MulOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise multiplication of input values."""
         """TODO: Your code here"""
+        assert len(input_values) == 2
+        return input_values[0] * input_values[1]
 
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of multiplication node, return partial adjoint to each input."""
         """TODO: Your code here"""
+        return [ mul(output_grad, node.inputs[1]), mul(output_grad, node.inputs[0]) ]         
 
 
 class MulByConstOp(Op):
@@ -225,10 +228,13 @@ class MulByConstOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise multiplication of the input value and the constant."""
         """TODO: Your code here"""
+        assert len(input_values) == 1
+        return input_values[0] * node.constant
 
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of multiplication node, return partial adjoint to the input."""
         """TODO: Your code here"""
+        return [mul_by_const(output_grad, node.constant)]
 
 
 class DivOp(Op):
@@ -244,10 +250,13 @@ class DivOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise division of input values."""
         """TODO: Your code here"""
+        assert len(input_values) == 2 and np.all(input_values[1] != 0) 
+        return input_values[0] / input_values[1]
 
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of division node, return partial adjoint to each input."""
         """TODO: Your code here"""
+        return [div(output_grad, node.inputs[1]), mul(output_grad, div(mul_by_const(node.inputs[0], -1), mul(node.inputs[1], node.inputs[1]))) ]
 
 
 class DivByConstOp(Op):
@@ -264,6 +273,8 @@ class DivByConstOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Return the element-wise division of the input value and the constant."""
         """TODO: Your code here"""
+        assert len(input_values) == 1 and node.constant != 0
+        return input_values[0] / node.constant
 
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of division node, return partial adjoint to the input."""
@@ -311,6 +322,9 @@ class MatMulOp(Op):
         always 2d numpy.ndarray.
         """
         """TODO: Your code here"""
+        assert len(input_values) == 2
+        return np.matmul(input_values[0].T if node.attrs["trans_A"] else input_values[0], input_values[1].T if node.attrs["trans_B"] else input_values[1])
+
 
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of matmul node, return partial adjoint to each input.
@@ -403,6 +417,24 @@ class Evaluator:
             The list of values for nodes in `eval_nodes` field.
         """
         """TODO: Your code here"""
+
+        computed_values = {}
+
+        def compute(node):
+            if node in computed_values:
+                return computed_values[node]
+            if node in input_values:
+                computed_values[node] = input_values[node]
+                return computed_values[node]
+            inputs = [compute(inp) for inp in node.inputs]
+            computed_values[node] = node.op.compute(node, input_values = inputs)
+            return computed_values[node]
+
+        eval_values = []
+        for node in self.eval_nodes:
+            eval_values.append(compute(node))
+
+        return eval_values
 
 
 def gradients(output_node: Node, nodes: List[Node]) -> List[Node]:
