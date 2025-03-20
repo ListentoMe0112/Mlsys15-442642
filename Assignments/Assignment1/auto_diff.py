@@ -279,6 +279,7 @@ class DivByConstOp(Op):
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Given gradient of division node, return partial adjoint to the input."""
         """TODO: Your code here"""
+        return [div_by_const(output_grad, node.constant)]
 
 
 class MatMulOp(Op):
@@ -322,7 +323,7 @@ class MatMulOp(Op):
         always 2d numpy.ndarray.
         """
         """TODO: Your code here"""
-        assert len(input_values) == 2
+        assert len(input_values) == 2, f"input_values length: %s".format(len(input_values))
         return np.matmul(input_values[0].T if node.attrs["trans_A"] else input_values[0], input_values[1].T if node.attrs["trans_B"] else input_values[1])
 
 
@@ -338,8 +339,26 @@ class MatMulOp(Op):
         - You may want to look up some materials for the gradients of matmul.
         """
         """TODO: Your code here"""
-
-
+        # 根据矩阵乘法的梯度规则和转置标志调整计算方式
+        A = node.inputs[0]
+        B = node.inputs[1]
+        trans_A = node.attrs["trans_A"]
+        trans_B = node.attrs["trans_B"]
+        
+        # 计算A的梯度
+        if trans_A:
+            grad_A = matmul(B, output_grad, trans_A=trans_B, trans_B=True)
+        else:
+            grad_A = matmul(output_grad, B, trans_B=not trans_B)
+        
+        # 计算B的梯度
+        if trans_B:
+            grad_B = matmul(output_grad, A, trans_A=True, trans_B=trans_A)
+        else:
+            grad_B = matmul(A, output_grad, trans_A=not trans_A, trans_B=False)
+        
+        return [grad_A, grad_B]
+ 
 class ZerosLikeOp(Op):
     """Zeros-like op that returns an all-zero array with the same shape as the input."""
 
@@ -457,3 +476,37 @@ def gradients(output_node: Node, nodes: List[Node]) -> List[Node]:
     """
 
     """TODO: Your code here"""
+    visited = set()
+    reverse_topo = []
+    
+    def build_topo(node):
+        if node in visited:
+            return
+        visited.add(node)
+        if node.inputs:
+            for input_node in node.inputs:
+                build_topo(input_node)
+        reverse_topo.append(node)
+    
+    build_topo(output_node)
+    
+    # Initialize gradients dictionary with the output node's gradient set to 1
+    grads = {}
+    grads[output_node] = ones_like(output_node)
+    
+    # Traverse the nodes in reverse topological order to accumulate gradients
+    for node in reversed(reverse_topo):
+        current_grad = grads.get(node, zeros_like(node))
+        if isinstance(node.op, PlaceholderOp):
+            continue
+        # Compute the gradients for each input of the current node
+        input_grads = node.op.gradient(node, current_grad)
+        # Update the gradients for each input node
+        for input_node, grad in zip(node.inputs, input_grads):
+            if input_node in grads:
+                grads[input_node] += grad
+            else:
+                grads[input_node] = grad
+    
+    # Return the gradients for the requested nodes, defaulting to zero if not found
+    return [grads.get(n, zeros_like(n)) for n in nodes]
