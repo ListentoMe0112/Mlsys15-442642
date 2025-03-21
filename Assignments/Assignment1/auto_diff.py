@@ -388,6 +388,86 @@ class OnesLikeOp(Op):
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         return [zeros_like(node.inputs[0])]
 
+class SumOp(Op):
+    """Sum elements along specified axes"""
+    
+    def __call__(self, node_A: Node, inshape: tuple, outshape: tuple, axis: tuple = None) -> Node:
+        return Node(
+            inputs=[node_A],
+            op=self,
+            attrs={"axis": axis, "inshape" : inshape, "outshape" : outshape},
+            name=f"Sum({node_A.name}, axis={axis})"
+        )
+    
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        """Sum input values along specified axes"""
+        assert len(input_values) == 1
+        return np.sum(input_values[0], axis=node.attrs["axis"])
+    
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        """Broadcast gradient back to original shape"""
+            
+        # Broadcast gradient back to original shape
+        return [broadcast_to(output_grad, node.attrs.get("outshape", None), node.attrs.get("inshape", None))]
+
+class BroadcastToOp(Op):
+    """Broadcast tensor to target shape"""
+    
+    def __call__(self, node_A: Node, inshape: tuple, outshape: tuple) -> Node:
+        return Node(
+            inputs=[node_A],
+            op=self,
+            attrs={"inshape": inshape, "outshape":outshape},
+            name=f"BroadcastTo({node_A.name}, {inshape}->{outshape})"
+        )
+    
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        """Broadcast input to target shape"""
+        assert len(input_values) == 1
+        return np.broadcast_to(input_values[0], node.attrs["outshape"])
+    
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        """Sum gradients over broadcasted dimensions"""
+        # Sum gradients along the axes that were broadcasted
+        input_shape = node.attrs.get("inshape", None)
+        output_shape = node.attrs.get("outshape", None)
+        input_shape = (1,) * (len(output_shape) - len(input_shape)) + input_shape
+    
+        broadcasted_axes = []
+        for i, (in_dim, out_dim) in enumerate(zip(input_shape, output_shape)):
+            if in_dim == 1 and out_dim > 1:
+                broadcasted_axes.append(i)
+        return [sum_along_axes(output_grad, axis=broadcasted_axes, inshape=node.attrs.get("outshape", None), outshape=node.attrs.get("inshape", None))]
+
+class LogarithmOp(Op):
+    """Element-wise logarithm operation."""
+    
+    def __call__(self, node_A: Node) -> Node:
+        return Node(inputs=[node_A], op=self, name=f"Log({node_A.name})")
+    
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        """Element-wise logarithm operation"""
+        assert len(input_values) == 1
+        return np.log(input_values[0])
+
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        """Gradient of logarithm is 1/x"""
+        return [div(output_grad, node.inputs[0])]
+
+class ExponentiationOp(Op):
+    """Element-wise exponentiation operation."""
+
+    def __call__(self, node_A: Node) -> Node:
+        return Node(inputs=[node_A], op=self, name=f"Exp({node_A.name})")
+
+    def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
+        """Element-wise exponentiation operation"""
+        assert len(input_values) == 1
+        return np.exp(input_values[0])
+    
+    def gradient(self, node: Node, output_grad: Node) -> List[Node]:
+        """Gradient of exp(x) is exp(x) * output_grad."""
+        return [mul(output_grad, exponentiation(node.inputs[0]))]
 
 # Create global instances of ops.
 # Your implementation should just use these instances, rather than creating new instances.
@@ -401,6 +481,10 @@ div_by_const = DivByConstOp()
 matmul = MatMulOp()
 zeros_like = ZerosLikeOp()
 ones_like = OnesLikeOp()
+broadcast_to = BroadcastToOp()
+sum_along_axes = SumOp()
+logarithm = LogarithmOp()
+exponentiation = ExponentiationOp()
 
 
 class Evaluator:
