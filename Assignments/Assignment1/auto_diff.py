@@ -391,53 +391,54 @@ class OnesLikeOp(Op):
 class SumOp(Op):
     """Sum elements along specified axes"""
     
-    def __call__(self, node_A: Node, inshape: tuple, outshape: tuple, axis: tuple = None) -> Node:
+    def __call__(self, node_A: Node, axis: tuple = None) -> Node:
         return Node(
             inputs=[node_A],
             op=self,
-            attrs={"axis": axis, "inshape" : inshape, "outshape" : outshape},
+            attrs={"axis": axis},
             name=f"Sum({node_A.name}, axis={axis})"
         )
     
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Sum input values along specified axes"""
         assert len(input_values) == 1
-        return np.sum(input_values[0], axis=node.attrs["axis"])
+        num = []
+        for _, v in zip(range(len(node.attrs["axis"])), node.attrs["axis"]):
+            num.append(input_values[0].shape[v])
+        node.attrs["num"] = num
+        return np.sum(input_values[0], axis=node.attrs["axis"], keepdims=True)
     
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Broadcast gradient back to original shape"""
-            
         # Broadcast gradient back to original shape
-        return [broadcast_to(output_grad, node.attrs.get("outshape", None), node.attrs.get("inshape", None))]
+        return [broadcast_to(output_grad,  list(node.attrs.get("axis", None)), list(node.attrs.get("num", None)))]
 
 class BroadcastToOp(Op):
     """Broadcast tensor to target shape"""
     
-    def __call__(self, node_A: Node, inshape: tuple, outshape: tuple) -> Node:
+    def __call__(self, node_A: Node, axis: list = None, num: list = None) -> Node:
         return Node(
             inputs=[node_A],
             op=self,
-            attrs={"inshape": inshape, "outshape":outshape},
-            name=f"BroadcastTo({node_A.name}, {inshape}->{outshape})"
+            attrs={ "axis" : axis, "num": num},
+            name=f"BroadcastTo({node_A.name}, {axis}, {num})"
         )
     
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Broadcast input to target shape"""
         assert len(input_values) == 1
-        return np.broadcast_to(input_values[0], node.attrs["outshape"])
+        target_shape = list(input_values[0].shape)
+        for i, v in enumerate(node.attrs["axis"]):
+            while len(target_shape) < v:
+                target_shape.append(1) 
+            target_shape[v-1] = node.attrs["num"][i] 
+
+        return np.broadcast_to(input_values[0], tuple(target_shape))
     
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Sum gradients over broadcasted dimensions"""
         # Sum gradients along the axes that were broadcasted
-        input_shape = node.attrs.get("inshape", None)
-        output_shape = node.attrs.get("outshape", None)
-        input_shape = (1,) * (len(output_shape) - len(input_shape)) + input_shape
-    
-        broadcasted_axes = []
-        for i, (in_dim, out_dim) in enumerate(zip(input_shape, output_shape)):
-            if in_dim == 1 and out_dim > 1:
-                broadcasted_axes.append(i)
-        return [sum_along_axes(output_grad, axis=broadcasted_axes, inshape=node.attrs.get("outshape", None), outshape=node.attrs.get("inshape", None))]
+        return [sum_along_axes(output_grad, axis= node.attrs.get("axis", None))]
 
 class LogarithmOp(Op):
     """Element-wise logarithm operation."""

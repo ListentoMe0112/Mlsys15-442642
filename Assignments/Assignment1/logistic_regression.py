@@ -30,7 +30,6 @@ def logistic_regression(X: ad.Node, W: ad.Node, b: ad.Node) -> ad.Node:
         When evaluating, it should have shape (batch_size, num_classes).
     """
     """TODO: Your code here"""
-    return ad.add(ad.matmul(X, W), ad.broadcast_to(b, b.attrs["shape"], (X.attrs["shape"][0], b.shape["shape"][0])))
 
 
 def softmax_loss(Z: ad.Node, y_one_hot: ad.Node, batch_size: int) -> ad.Node:
@@ -65,33 +64,6 @@ def softmax_loss(Z: ad.Node, y_one_hot: ad.Node, batch_size: int) -> ad.Node:
     Try to think about why our softmax loss may need the batch size.
     """
     """TODO: Your code here"""
-    exp_z = ad.exponentiation(Z)
-    sum_exp = ad.sum_along_axes(
-        exp_z, 
-        axis=1, 
-        inshape=(batch_size, Z.attrs["shape"][1]), 
-        outshape=(batch_size,)
-    ) 
-    log_sum_exp = ad.logarithm(sum_exp)
-    z_y = ad.sum_along_axes(
-        ad.mul(Z, y_one_hot), 
-        axis=1, 
-        inshape=(batch_size, Z.attrs["shape"][1]), 
-        outshape=(batch_size,)
-    )
-
-    per_sample_loss = ad.add(log_sum_exp, -z_y)
-
-    return ad.mul_by_const(
-        ad.sum_along_axes(
-            per_sample_loss, 
-            axis=0,
-            inshape=(batch_size, 1), 
-            outshape=()  # 最终输出为标量
-        ),
-        1.0 / batch_size
-    )
-    
 
 
 def sgd_epoch(
@@ -168,9 +140,9 @@ def train_model():
     lr = 0.05
 
     # - Define the forward graph.
-    x = ad.Variable(name="x", attrs = {"shape": (batch_size, in_features)})
-    W = ad.Variable(name="W", attrs = {"shape": (in_features, num_classes)})
-    b = ad.Variable(name="b", attrs = {"shape": (num_classes,)})
+    x = ad.Variable(name="x")
+    W = ad.Variable(name="W")
+    b = ad.Variable(name="b")
     y_predict = logistic_regression(x, W, b)
     # - Construct the backward graph.
     y_groundtruth = ad.Variable(name="y")
