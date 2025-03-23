@@ -30,6 +30,10 @@ def logistic_regression(X: ad.Node, W: ad.Node, b: ad.Node) -> ad.Node:
         When evaluating, it should have shape (batch_size, num_classes).
     """
     """TODO: Your code here"""
+    z = ad.matmul(X, W)
+    b_broad = ad.broadcast_to(b, z, axis=0)
+    z = z + b_broad
+    return z 
 
 
 def softmax_loss(Z: ad.Node, y_one_hot: ad.Node, batch_size: int) -> ad.Node:
@@ -63,7 +67,28 @@ def softmax_loss(Z: ad.Node, y_one_hot: ad.Node, batch_size: int) -> ad.Node:
     softmax loss function usually does not take the batch size as input.
     Try to think about why our softmax loss may need the batch size.
     """
-    """TODO: Your code here"""
+    # 计算指数项 exp(z_i)
+    exp_z = ad.exponentiation(Z)
+    
+    # 对每个样本的类别维度求和 (保持维度用于广播)
+    sum_exp_z = ad.sum_along_axes(exp_z, axis=(1,))
+    
+    # 计算 log(sum(exp(z_i)))
+    log_sum_exp = ad.logarithm(sum_exp_z)
+    
+    # 计算 z_y = sum(z * y_one_hot) 
+    z_y = ad.sum_along_axes(ad.mul(Z, y_one_hot), axis=(1,))
+    
+    # 计算单个样本的损失: log_sum_exp - z_y
+    per_sample_loss = log_sum_exp - z_y
+    
+    # 对所有样本的损失求和
+    total_loss = ad.sum_along_axes(per_sample_loss, axis=0)
+    
+    # 计算平均损失: total_loss / batch_size
+    avg_loss = ad.mul_by_const(total_loss, 1.0 / batch_size)
+    
+    return avg_loss
 
 
 def sgd_epoch(
@@ -124,7 +149,33 @@ def sgd_epoch(
     loss: np.ndarray
         The average training loss of this epoch.
     """
-    """TODO: Your code here"""
+    num_samples = X.shape[0]
+    total_loss = 0.0
+    num_batches = 0
+    
+    # 遍历所有mini-batch
+    for start_idx in range(0, num_samples, batch_size):
+        end_idx = start_idx + batch_size
+        X_batch = X[start_idx:end_idx]
+        y_batch = y[start_idx:end_idx]
+        
+        # 将标签转换为one-hot编码
+        y_one_hot = np.eye(10)[y_batch]  # 假设有10个类别
+        
+        # 运行模型获取梯度
+        _, loss_val, grad_W, grad_b = f_run_model(X_batch, y_one_hot, W, b)
+        
+        # 更新参数
+        W -= lr * grad_W
+        b -= lr * grad_b.squeeze()
+        
+        # 累计损失
+        total_loss += loss_val
+        num_batches += 1
+    
+    # 计算平均损失
+    avg_loss = total_loss / num_batches if num_batches > 0 else 0.0
+    return W, b, avg_loss
 
 
 def train_model():

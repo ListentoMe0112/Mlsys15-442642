@@ -402,43 +402,37 @@ class SumOp(Op):
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
         """Sum input values along specified axes"""
         assert len(input_values) == 1
-        num = []
-        for _, v in zip(range(len(node.attrs["axis"])), node.attrs["axis"]):
-            num.append(input_values[0].shape[v])
-        node.attrs["num"] = num
         return np.sum(input_values[0], axis=node.attrs["axis"], keepdims=True)
     
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
-        """Broadcast gradient back to original shape"""
-        # Broadcast gradient back to original shape
-        return [broadcast_to(output_grad,  list(node.attrs.get("axis", None)), list(node.attrs.get("num", None)))]
+        """Broadcast gradient back to original shape using dynamic shape"""
+        # 通过原始输入节点动态获取形状
+        return [broadcast_to(output_grad, node.inputs[0], axis=node.attrs.get("axis", None))]
 
 class BroadcastToOp(Op):
-    """Broadcast tensor to target shape"""
+    """Broadcast tensor to match target node's shape along specified axes"""
     
-    def __call__(self, node_A: Node, axis: list = None, num: list = None) -> Node:
+    def __call__(self, node_A: Node, target_node: Node, axis: list = None) -> Node:
         return Node(
-            inputs=[node_A],
+            inputs=[node_A, target_node],
             op=self,
-            attrs={ "axis" : axis, "num": num},
-            name=f"BroadcastTo({node_A.name}, {axis}, {num})"
+            attrs={"axis": axis},
+            name=f"BroadcastTo({node_A.name}, {target_node.name})"
         )
     
     def compute(self, node: Node, input_values: List[np.ndarray]) -> np.ndarray:
-        """Broadcast input to target shape"""
-        assert len(input_values) == 1
-        target_shape = list(input_values[0].shape)
-        for i, v in enumerate(node.attrs["axis"]):
-            while len(target_shape) < v:
-                target_shape.append(1) 
-            target_shape[v-1] = node.attrs["num"][i] 
-
-        return np.broadcast_to(input_values[0], tuple(target_shape))
+        """Broadcast input to match target node's shape"""
+        assert len(input_values) == 2
+        input_data = input_values[0]
+        target_shape = input_values[1].shape  # 动态获取目标形状
+        
+        # 直接使用动态获取的目标形状进行广播
+        return np.broadcast_to(input_data, target_shape)
     
     def gradient(self, node: Node, output_grad: Node) -> List[Node]:
         """Sum gradients over broadcasted dimensions"""
-        # Sum gradients along the axes that were broadcasted
-        return [sum_along_axes(output_grad, axis= node.attrs.get("axis", None))]
+        # 沿原始广播的轴求和，保持batch维度不变
+        return [sum_along_axes(output_grad, axis=node.attrs.get("axis", None))]
 
 class LogarithmOp(Op):
     """Element-wise logarithm operation."""
